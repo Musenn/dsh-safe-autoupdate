@@ -1,0 +1,14 @@
+- insert:
+    - id: safe-autoupdate
+      name: dsh-safe-autoupdate
+      config:
+        enabled: true
+        autoCheck: true
+        autoApply: true
+        channel: latest
+        startupDelayMs: 30000
+        checkIntervalMs: 21600000
+        checkTimeoutMs: 30000
+        installTimeoutMs: 600000
+        registry: ""
+        logToConsole: true

@@ -1,0 +1,41 @@
+{
+  "name": "dsh-safe-autoupdate",
+  "version": "0.1.0",
+  "description": "A narrowly scoped automatic core updater for npm-installed DeepSeek Harness deployments.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "scripts/apply-update.mjs",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "check": "node --check lib/*.js && node --check scripts/*.mjs && node --test",
+    "audit:remote": "node scripts/check-github-remote.mjs",
+    "pack:check": "npm pack --dry-run"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.0"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "autoupdate",
+    "updater"
+  ],
+  "license": "MIT"
+}
