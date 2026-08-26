@@ -1,6 +1,6 @@
 {
   "name": "dsh-safe-autoupdate",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A narrowly scoped automatic core updater for npm-installed DeepSeek Harness deployments.",
   "type": "module",
   "main": "lib/index.js",
@@ -37,5 +37,13 @@
     "autoupdate",
     "updater"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Musenn/dsh-safe-autoupdate.git"
+  },
+  "homepage": "https://github.com/Musenn/dsh-safe-autoupdate#readme",
+  "bugs": {
+    "url": "https://github.com/Musenn/dsh-safe-autoupdate/issues"
+  },
   "license": "MIT"
 }
