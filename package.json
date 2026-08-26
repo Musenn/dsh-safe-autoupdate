@@ -10,7 +10,7 @@
   },
   "files": [
     "lib",
-    "scripts/apply-update.mjs",
+    "scripts",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
