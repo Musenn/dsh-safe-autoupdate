@@ -11,11 +11,12 @@ test("state is confined to the plugin private directory", () => {
   assert.equal(dataDirectory({ DSH_HOME: "/srv/dsh-home" }), "/srv/dsh-home/plugins-data/dsh-safe-autoupdate");
 });
 
-test("runtime source contains no credential, conversation, session, profile, or Git access", async () => {
-  const files = [...await readdir(join(root, "lib")), "apply-update.mjs"].filter((name) => name.endsWith(".js") || name.endsWith(".mjs"));
+test("runtime source contains no credential, conversation, session, profile, push, or remote-mutation access", async () => {
+  const files = [...await readdir(join(root, "lib")), "apply-update.mjs", "apply-source-update.mjs"]
+    .filter((name) => name.endsWith(".js") || name.endsWith(".mjs"));
   const contents = [];
   for (const file of files) {
-    const path = file === "apply-update.mjs" ? join(root, "scripts", file) : join(root, "lib", file);
+    const path = file.endsWith(".mjs") ? join(root, "scripts", file) : join(root, "lib", file);
     contents.push(await readFile(path, "utf8"));
   }
   const source = contents.join("\n").toLowerCase();

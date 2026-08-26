@@ -1,7 +1,7 @@
 {
   "name": "dsh-safe-autoupdate",
-  "version": "0.2.0",
-  "description": "A narrowly scoped automatic core updater for npm-installed DeepSeek Harness deployments.",
+  "version": "0.3.0",
+  "description": "A narrowly scoped automatic core updater for npm-installed and official-source DeepSeek Harness deployments.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

@@ -13,5 +13,7 @@
         installTimeoutMs: 600000
         restartDelayMs: 120000
         shutdownTimeoutMs: 60000
+        sourcePnpmCommand: pnpm
+        sourceBuildTimeoutMs: 1200000
         registry: ""
         logToConsole: true
