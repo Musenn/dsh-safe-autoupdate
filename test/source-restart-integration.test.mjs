@@ -8,6 +8,7 @@ import test from "node:test";
 const helper = new URL("../scripts/apply-source-update.mjs", import.meta.url);
 const fromCommit = "1".repeat(40);
 const targetCommit = "2".repeat(40);
+const laterCommit = "3".repeat(40);
 
 function waitFor(child) {
   return new Promise((resolve, reject) => {
@@ -26,7 +27,12 @@ async function waitForFile(file) {
   return readFile(file, "utf8");
 }
 
-async function runSourceUpdate(context, { failTargetBuild = false } = {}) {
+async function runSourceUpdate(context, {
+  failTargetBuild = false,
+  contaminateTargetBuild = false,
+  failFetch = false,
+  fetchedCommit = targetCommit,
+} = {}) {
   const root = await mkdtemp(join(tmpdir(), "dsh-safe-source-restart-"));
   context.after(() => import("node:fs/promises").then(({ rm }) => rm(root, { recursive: true, force: true })));
   const data = join(root, "data");
@@ -49,8 +55,9 @@ const head = () => readFileSync(process.env.HEAD_FILE, "utf8").trim();
 if (operation[0] === "remote" && operation[1] === "get-url") console.log("https://github.com/deepseek-ai/deepseek-harness.git");
 else if (operation[0] === "status") process.exit(0);
 else if (operation[0] === "rev-parse" && operation[1] === "HEAD") console.log(head());
-else if (operation[0] === "rev-parse" && operation[1] === "FETCH_HEAD") console.log(process.env.TARGET_COMMIT);
-else if (operation[0] === "fetch" || operation[0] === "merge-base") process.exit(0);
+else if (operation[0] === "rev-parse" && operation[1] === "FETCH_HEAD") console.log(process.env.FETCHED_COMMIT);
+else if (operation[0] === "fetch") process.exit(process.env.FAIL_FETCH === "1" ? 14 : 0);
+else if (operation[0] === "merge-base") process.exit(0);
 else if (operation[0] === "merge" && operation[1] === "--ff-only") writeFileSync(process.env.HEAD_FILE, process.env.TARGET_COMMIT);
 else if (operation[0] === "reset" && operation[1] === "--hard") writeFileSync(process.env.HEAD_FILE, operation[2]);
 else process.exit(10);
@@ -59,11 +66,22 @@ else process.exit(10);
   await writeFile(
     join(fakeBin, "pnpm"),
     `#!/usr/bin/env node
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 const args = process.argv.slice(2);
 const head = readFileSync(process.env.HEAD_FILE, "utf8").trim();
 if (args[0] === "install") process.exit(0);
+if (args[0] === "run" && args[1] === "clean") {
+  rmSync(process.env.BUILD_CONTAMINATION, { force: true });
+  process.exit(0);
+}
 if (args[0] === "run" && args[1] === "build") {
+  if (process.env.CONTAMINATE_TARGET_BUILD === "1" && head === process.env.TARGET_COMMIT) {
+    writeFileSync(process.env.BUILD_CONTAMINATION, "target output");
+    process.exit(12);
+  }
+  if (process.env.CONTAMINATE_TARGET_BUILD === "1" && head !== process.env.TARGET_COMMIT) {
+    try { readFileSync(process.env.BUILD_CONTAMINATION); process.exit(13); } catch {}
+  }
   if (process.env.FAIL_TARGET_BUILD === "1" && head === process.env.TARGET_COMMIT) process.exit(12);
   process.exit(0);
 }
@@ -105,14 +123,19 @@ process.exit(11);
       PATH: `${fakeBin}:${process.env.PATH}`,
       HEAD_FILE: headFile,
       TARGET_COMMIT: targetCommit,
+      FETCHED_COMMIT: fetchedCommit,
       RESTART_MARKER: marker,
+      BUILD_CONTAMINATION: join(sourceRoot, "generated-output.txt"),
       FAIL_TARGET_BUILD: failTargetBuild ? "1" : "0",
+      CONTAMINATE_TARGET_BUILD: contaminateTargetBuild ? "1" : "0",
+      FAIL_FETCH: failFetch ? "1" : "0",
     },
     stdio: "ignore",
   });
 
-  assert.equal(await waitFor(transaction), 0);
+  const exitCode = await waitFor(transaction);
   return {
+    exitCode,
     head: (await readFile(headFile, "utf8")).trim(),
     restart: await waitForFile(marker),
     state: JSON.parse(await readFile(join(data, "state.json"), "utf8")),
@@ -121,6 +144,7 @@ process.exit(11);
 
 test("source helper fast-forwards, builds, verifies, and restarts DSH", { skip: process.platform === "win32" }, async (context) => {
   const result = await runSourceUpdate(context);
+  assert.equal(result.exitCode, 0);
   assert.equal(result.head, targetCommit);
   assert.equal(result.restart, "web --no-open");
   assert.equal(result.state.installedCommit, targetCommit);
@@ -130,10 +154,40 @@ test("source helper fast-forwards, builds, verifies, and restarts DSH", { skip: 
 
 test("source helper restores the original commit when the target build fails", { skip: process.platform === "win32" }, async (context) => {
   const result = await runSourceUpdate(context, { failTargetBuild: true });
+  assert.equal(result.exitCode, 0);
   assert.equal(result.head, fromCommit);
   assert.equal(result.restart, "web --no-open");
   assert.equal(result.state.installedCommit, fromCommit);
   assert.equal(result.state.lastResult.phase, "rolled-back");
   assert.equal(result.state.lastResult.rollbackVerified, true);
+  assert.equal(result.state.lastResult.restart.ok, true);
+});
+
+test("source helper isolates failed target build output before rollback", { skip: process.platform === "win32" }, async (context) => {
+  const result = await runSourceUpdate(context, { contaminateTargetBuild: true });
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.head, fromCommit);
+  assert.equal(result.restart, "web --no-open");
+  assert.equal(result.state.installedCommit, fromCommit);
+  assert.equal(result.state.lastResult.phase, "rolled-back");
+  assert.equal(result.state.lastResult.rollbackVerified, true);
+  assert.equal(result.state.lastResult.restart.ok, true);
+});
+
+test("source helper accepts a locked target when the upstream branch advances", { skip: process.platform === "win32" }, async (context) => {
+  const result = await runSourceUpdate(context, { fetchedCommit: laterCommit });
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.head, targetCommit);
+  assert.equal(result.restart, "web --no-open");
+  assert.equal(result.state.lastResult.phase, "done");
+});
+
+test("source helper restarts the original checkout when a preflight fetch fails", { skip: process.platform === "win32" }, async (context) => {
+  const result = await runSourceUpdate(context, { failFetch: true });
+  assert.equal(result.exitCode, 6);
+  assert.equal(result.head, fromCommit);
+  assert.equal(result.restart, "web --no-open");
+  assert.equal(result.state.installedCommit, fromCommit);
+  assert.equal(result.state.lastResult.phase, "preflight-failed");
   assert.equal(result.state.lastResult.restart.ok, true);
 });

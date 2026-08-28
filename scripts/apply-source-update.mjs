@@ -73,6 +73,8 @@ async function verifyBuild() {
 async function prepareCommit(commit) {
   const install = await command(pnpm, ["install", "--frozen-lockfile"], installTimeoutMs);
   if (!install.ok) return { ok: false, phase: "install", error: install.detail, commit };
+  const clean = await command(pnpm, ["run", "clean"], buildTimeoutMs);
+  if (!clean.ok) return { ok: false, phase: "clean", error: clean.detail, commit };
   const build = await command(pnpm, ["run", "build"], buildTimeoutMs);
   if (!build.ok) return { ok: false, phase: "build", error: build.detail, commit };
   const verify = await verifyBuild();
@@ -115,6 +117,25 @@ function restartSource() {
   }
 }
 
+function failPreflight(error, exitCode) {
+  const restart = restartSource();
+  writeState({
+    installedCommit: fromCommit,
+    pendingVersion: targetCommit,
+    helper: null,
+    lastResult: {
+      phase: "preflight-failed",
+      from: fromCommit,
+      to: targetCommit,
+      error,
+      restart,
+      at: Date.now(),
+    },
+    lastError: error,
+  });
+  process.exit(exitCode);
+}
+
 const commitsValid = /^[0-9a-f]{40}$/i.test(fromCommit) && /^[0-9a-f]{40}$/i.test(targetCommit);
 const namesValid = /^[A-Za-z0-9._/-]+$/.test(branch) && !branch.startsWith("-") && /^[A-Za-z0-9._-]+$/.test(remote);
 if (!directory || !existsSync(sourceRoot) || !commitsValid || !namesValid || !token || !Number.isInteger(parentPid) || parentPid <= 0) process.exit(2);
@@ -131,22 +152,23 @@ if (!armed?.armed || armed.token !== token || armed.targetVersion !== targetComm
 
 const remoteUrl = await git(["remote", "get-url", remote]);
 if (!remoteUrl.ok || !isOfficialSourceRemote(remoteUrl.stdout.trim())) {
-  writeState({ helper: null, lastError: "source remote is not the official GitHub repository" });
-  process.exit(4);
+  failPreflight("source remote is not the official GitHub repository", 4);
 }
 const clean = await git(["status", "--porcelain=v1", "--untracked-files=normal"]);
 const current = await git(["rev-parse", "HEAD"]);
 if (!clean.ok || clean.stdout.trim() !== "" || !current.ok || current.stdout.trim() !== fromCommit) {
-  writeState({ helper: null, lastError: "source checkout changed after the update was armed" });
-  process.exit(5);
+  failPreflight("source checkout changed after the update was armed", 5);
 }
 
 const fetched = await git(["fetch", "--quiet", "--no-tags", remote, branch]);
 const fetchedHead = fetched.ok ? await git(["rev-parse", "FETCH_HEAD"]) : { ok: false, stdout: "" };
-const ancestor = fetchedHead.ok ? await git(["merge-base", "--is-ancestor", fromCommit, targetCommit]) : { ok: false };
-if (!fetched.ok || !fetchedHead.ok || fetchedHead.stdout.trim() !== targetCommit || !ancestor.ok) {
-  writeState({ helper: null, lastError: "source upstream changed or is not a fast-forward update" });
-  process.exit(6);
+if (!fetched.ok) failPreflight(`source fetch failed: ${fetched.detail}`, 6);
+if (!fetchedHead.ok) failPreflight(`source fetch verification failed: ${fetchedHead.detail || "FETCH_HEAD unavailable"}`, 6);
+const fetchedCommit = fetchedHead.stdout.trim();
+const fromIsAncestor = await git(["merge-base", "--is-ancestor", fromCommit, targetCommit]);
+const targetIsUpstream = await git(["merge-base", "--is-ancestor", targetCommit, fetchedCommit]);
+if (!fromIsAncestor.ok || !targetIsUpstream.ok) {
+  failPreflight("locked source target is no longer a fast-forward commit on the upstream branch", 6);
 }
 
 const merged = await git(["merge", "--ff-only", targetCommit]);

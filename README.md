@@ -6,12 +6,14 @@
 
 - Updates only `@deepseek-ai/dsh` in the detected npm installation prefix.
 - For source mode, accepts only a clean checkout whose `origin` is exactly `deepseek-ai/deepseek-harness` on GitHub and whose update is fast-forward-only.
-- Source updates use `pnpm install --frozen-lockfile`, build, and `pnpm dsh --version` verification; failure restores the original commit, dependencies, and build.
+- Source updates use `pnpm install --frozen-lockfile`, the repository's guarded `pnpm run clean`, build, and `pnpm dsh --version` verification; failure restores the original commit and repeats the clean dependency/build transaction before restart.
 - Does not update installed profile plugins.
 - Does not read or write API keys, credential files, settings, workspaces, sessions, conversations, or attachments.
 - Writes state and logs only under `$DSH_HOME/plugins-data/dsh-safe-autoupdate/`.
 - Refuses unsupported source checkouts and npx-managed cache installations instead of guessing a target.
 - Uses exact package versions or Git commits for both update and rollback.
+- If source fetch or preflight verification fails after shutdown, records the specific failure and restarts the unchanged checkout.
+- A locked target remains eligible when the upstream branch advances, but only while that exact target is still in the validated upstream history.
 - Restarts only after the observed agent set is idle and a two-minute grace period has elapsed.
 - Sends `SIGTERM` and aborts the update if DSH does not shut down within the configured timeout; it never force-kills the process.
 - Refuses automatic restart when launcher arguments look like they may contain credentials.
@@ -68,4 +70,4 @@ npm run pack:check
 npm run audit:remote
 ```
 
-The automated tests cover semantic-version selection, npm and source-installation detection, npx refusal, exact package and source transactions, graceful restart, rollback, state-directory isolation, official-remote enforcement, and forbidden runtime access paths.
+The automated tests cover semantic-version selection, npm and source-installation detection, npx refusal, exact package and source transactions, graceful restart, rollback after a failed build leaves generated output behind, state-directory isolation, official-remote enforcement, and forbidden runtime access paths.
